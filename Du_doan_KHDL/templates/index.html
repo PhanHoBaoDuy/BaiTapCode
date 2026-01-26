@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dự đoán lương Data Science</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-6">
+  <div class="bg-white shadow-2xl rounded-2xl p-8 max-w-2xl w-full">
+    <h2 class="text-2xl font-bold text-center text-blue-600 mb-6">Dự đoán mức lương lĩnh vực Data Science (EURO / NĂM)</h2>
+
+    <form method="post" class="space-y-5">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block font-semibold mb-1">Cấp độ công việc:</label>
+          <select name="seniority_level" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-400 focus:outline-none">
+            <option value="junior" {% if selected_seniority == 'junior' %}selected{% endif %}>Junior</option>
+            <option value="midlevel" {% if selected_seniority == 'midlevel' %}selected{% endif %}>Mid</option>
+            <option value="senior" {% if selected_seniority == 'senior' %}selected{% endif %}>Senior</option>
+            <option value="lead" {% if selected_seniority == 'lead' %}selected{% endif %}>Lead</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-semibold mb-1">Vị trí công việc:</label>
+          <select name="job_title" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-400 focus:outline-none">
+            <option value="Data Scientist" {% if selected_job == 'Data Scientist' %}selected{% endif %}>Data Scientist</option>
+            <option value="Data Engineer" {% if selected_job == 'Data Engineer' %}selected{% endif %}>Data Engineer</option>
+            <option value="Data Analyst" {% if selected_job == 'Data Analyst' %}selected{% endif %}>Data Analyst</option>
+            <option value="Machine Learning Engineer" {% if selected_job == 'Machine Learning Engineer' %}selected{% endif %}>ML Engineer</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label class="block font-semibold mb-2">Kỹ năng:</label>
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          {% set skills = ["python","sql","r","spark","aws","machine learning","tensorflow","pytorch","excel"] %}
+          {% for s in skills %}
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="skills" value="{{s}}" class="h-4 w-4 text-blue-500" 
+              {% if s in selected_skills %}checked{% endif %} /> {{s}}
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <button type="submit" class="w-full bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition">
+        🔍 Dự đoán ngay
+      </button>
+    </form>
+
+    {% if prediction %}
+      <div class="mt-8 bg-blue-50 border-l-4 border-blue-500 p-4 rounded mb-6">
+        <h3 class="text-lg font-semibold">💰 Mức lương dự đoán:</h3>
+        <p class="text-3xl font-bold text-blue-600">{{ prediction | round(3) }} EURO / NĂM</p>
+        <p class="text-sm text-gray-600 mt-1">Vị trí: <b>{{ selected_job }}</b> | Cấp độ: <b>{{ selected_seniority }}</b></p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        <div class="bg-white p-2 rounded shadow border">
+            <h4 class="text-center font-semibold text-sm mb-2">So sánh với thị trường (Giả định)</h4>
+            <canvas id="barChart"></canvas>
+        </div>
+        <div class="bg-white p-2 rounded shadow border">
+            <h4 class="text-center font-semibold text-sm mb-2">Tỷ lệ kỹ năng sở hữu</h4>
+            <div class="h-48 flex justify-center">
+                <canvas id="pieChart"></canvas>
+            </div>
+        </div>
+      </div>
+
+      <script>
+        // Lấy dữ liệu từ Backend truyền sang
+        const chartData = {{ chart_data | tojson }};
+        
+        // 1. Cấu hình Biểu đồ Cột (Bar Chart)
+        const ctxBar = document.getElementById('barChart').getContext('2d');
+        new Chart(ctxBar, {
+            type: 'bar',
+            data: {
+                labels: ['Junior Avg', 'Mid Avg', 'Senior Avg', 'Dự đoán của bạn'],
+                datasets: [{
+                    label: 'Mức lương (Euro)',
+                    // Dữ liệu giả định thị trường + Lương dự đoán
+                    data: [35000, 55000, 80000, chartData.prediction], 
+                    backgroundColor: [
+                        'rgba(209, 213, 219, 0.7)', // Gray
+                        'rgba(209, 213, 219, 0.7)',
+                        'rgba(209, 213, 219, 0.7)',
+                        'rgba(37, 99, 235, 0.8)'     // Blue (Nổi bật)
+                    ],
+                    borderColor: [
+                        'rgba(209, 213, 219, 1)',
+                        'rgba(209, 213, 219, 1)',
+                        'rgba(209, 213, 219, 1)',
+                        'rgba(37, 99, 235, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+
+        // 2. Cấu hình Biểu đồ Tròn (Pie Chart)
+        const ctxPie = document.getElementById('pieChart').getContext('2d');
+        new Chart(ctxPie, {
+            type: 'doughnut',
+            data: {
+                labels: ['Kỹ năng đã chọn', 'Kỹ năng chưa có'],
+                datasets: [{
+                    data: [chartData.num_skills_selected, chartData.num_skills_missing],
+                    backgroundColor: [
+                        'rgba(37, 99, 235, 0.8)', // Blue
+                        'rgba(229, 231, 235, 0.8)'  // Gray
+                    ],
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+      </script>
+    {% endif %}
+  </div>
+</body>
+</html>

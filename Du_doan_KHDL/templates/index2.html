@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dự đoán lương Data Science</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-6">
+  <div class="bg-white shadow-2xl rounded-2xl p-8 max-w-2xl w-full">
+    <h2 class="text-2xl font-bold text-center text-blue-600 mb-6">Dự đoán mức lương lĩnh vực Data Science (EURO / NĂM)</h2>
+
+    <form method="post" class="space-y-5">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        
+        <div>
+          <label class="block font-semibold mb-1">Cấp độ công việc:</label>
+          <select name="seniority_level" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-400 focus:outline-none">
+            <option value="junior" {% if selected_seniority == 'junior' %}selected{% endif %}>Junior</option>
+            <option value="midlevel" {% if selected_seniority == 'midlevel' %}selected{% endif %}>Midlevel</option>
+            <option value="senior" {% if selected_seniority == 'senior' %}selected{% endif %}>Senior</option>
+            <option value="lead" {% if selected_seniority == 'lead' %}selected{% endif %}>Lead</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-semibold mb-1">Chức danh công việc:</label>
+          <select name="job_title" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-400 focus:outline-none">
+            <option value="data scientist" {% if selected_job == 'data scientist' %}selected{% endif %}>Data Scientist</option>
+            <option value="machine learning engineer" {% if selected_job == 'machine learning engineer' %}selected{% endif %}>Machine Learning Engineer</option>
+            <option value="data engineer" {% if selected_job == 'data engineer' %}selected{% endif %}>Data Engineer</option>
+            <option value="analyst" {% if selected_job == 'analyst' %}selected{% endif %}>Data Analyst</option>
+            <option value="other" {% if selected_job == 'other' %}selected{% endif %}>Khác</option>
+          </select>
+        </div>
+        
+        <div>
+          <label class="block font-semibold mb-1">Quốc gia đặt Trụ sở:</label>
+          <select name="headquarter_country" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-400 focus:outline-none">
+            <option value="USA" {% if selected_country == 'USA' %}selected{% endif %}>USA</option>
+            <option value="UK" {% if selected_country == 'UK' %}selected{% endif %}>UK</option>
+            <option value="CA" {% if selected_country == 'CA' %}selected{% endif %}>Canada</option>
+            <option value="DE" {% if selected_country == 'DE' %}selected{% endif %}>Germany (DE)</option>
+            <option value="FR" {% if selected_country == 'FR' %}selected{% endif %}>France (FR)</option>
+            <option value="IN" {% if selected_country == 'IN' %}selected{% endif %}>India (IN)</option>
+            <option value="Other" {% if selected_country == 'Other' %}selected{% endif %}>Khác</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-semibold mb-1">Doanh thu công ty (Tỷ/Triệu USD/EUR):</label>
+          <input type="text" name="revenue" value="{{ selected_revenue }}" placeholder="VD: 50B hoặc 100M" class="w-full border rounded-lg p-2 focus:ring-2 focus:ring-blue-400 focus:outline-none">
+          <p class="text-xs text-gray-500 mt-1">Sử dụng M cho Triệu, B cho Tỷ (ví dụ: 10B, 500M).</p>
+        </div>
+
+      </div>
+
+      <div class="border p-4 rounded-lg bg-gray-50">
+        <label class="block font-semibold mb-2">Các Kỹ năng (Chọn nhiều):</label>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {% set skills = ["python", "sql", "r", "spark", "aws", "machine learning", "tensorflow", "pytorch", "excel"] %}
+          {% for skill in skills %}
+          <label class="inline-flex items-center">
+            <input type="checkbox" name="skills" value="{{ skill }}" class="form-checkbox h-5 w-5 text-blue-600 rounded"
+                   {% if skill in selected_skills %}checked{% endif %}>
+            <span class="ml-2 text-sm">{{ skill | capitalize }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition duration-200">
+        Dự đoán Mức Lương
+      </button>
+    </form>
+
+    {% if prediction %}
+    <div class="mt-8">
+        <h3 class="text-xl font-bold text-center mb-4">Mức Lương Dự Đoán:</h3>
+        <div class="p-4 bg-green-100 border-l-4 border-green-500 text-center rounded-lg">
+            <p class="text-3xl font-extrabold text-green-700">
+                € {{ prediction }}
+            </p>
+            <p class="text-sm text-green-600 mt-1">(EURO / NĂM)</p>
+        </div>
+    </div>
+
+    <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="p-4 bg-gray-50 rounded-lg shadow-inner">
+            <h4 class="text-md font-semibold text-center mb-3">Tỷ lệ Kỹ năng đã chọn</h4>
+            <canvas id="pieChart"></canvas>
+        </div>
+
+        <div class="p-4 bg-gray-50 rounded-lg shadow-inner">
+            <h4 class="text-md font-semibold text-center mb-3">Dự đoán và Mức lương tham khảo</h4>
+            <canvas id="barChart"></canvas>
+        </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  {% if prediction %}
+  <script>
+    const chartData = {{ chart_data | tojson }};
+    const predictedSalary = chartData.prediction; // Mức lương gốc (không log)
+    
+    // Mức lương tham khảo theo cấp bậc (Giả định)
+    const baseSalaries = {
+        'junior': 45000,
+        'midlevel': 75000,
+        'senior': 110000,
+        'lead': 140000
+    };
+    const seniorityBase = baseSalaries[chartData.seniority] || 75000;
+
+    // Hàm format tiền tệ (được sử dụng trong tooltip)
+    function formatCurrency(value) {
+        if (value === 0) return '€ 0';
+        return '€ ' + value.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+
+    // 1. Cấu hình Biểu đồ Cột (Bar Chart)
+    const ctxBar = document.getElementById('barChart').getContext('2d');
+    new Chart(ctxBar, {
+        type: 'bar',
+        data: {
+            labels: ['Mức lương Cấp bậc (' + chartData.seniority.toUpperCase() + ')', 'Mức lương Dự đoán'],
+            datasets: [{
+                data: [seniorityBase, predictedSalary],
+                backgroundColor: [
+                    'rgba(209, 213, 219, 0.8)',
+                    'rgba(37, 99, 235, 0.8)'
+                ],
+                borderColor: [
+                    'rgba(209, 213, 219, 1)',
+                    'rgba(37, 99, 235, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { 
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Mức lương (EURO)'
+                    },
+                    ticks: {
+                        callback: function(value, index, values) {
+                            return formatCurrency(value);
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                label = formatCurrency(context.parsed.y);
+                            }
+                            return label;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // 2. Cấu hình Biểu đồ Tròn (Pie Chart)
+    const ctxPie = document.getElementById('pieChart').getContext('2d');
+    new Chart(ctxPie, {
+        type: 'doughnut',
+        data: {
+            labels: ['Kỹ năng đã chọn', 'Kỹ năng chưa có'],
+            datasets: [{
+                data: [chartData.num_skills_selected, chartData.num_skills_missing],
+                backgroundColor: [
+                    'rgba(37, 99, 235, 0.8)', // Blue
+                    'rgba(229, 231, 235, 0.8)'  // Gray
+                ],
+                hoverOffset: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' }
+            }
+        }
+    });
+  </script>
+  {% endif %}
+</body>
+</html>

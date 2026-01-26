@@ -1,0 +1,70 @@
+import pandas as pd
+import numpy as np
+import joblib 
+import re
+from sklearn.model_selection import train_test_split, GridSearchCV, KFold
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
+
+# --- 1. Load và Làm sạch Dữ liệu ---
+FILE_PATH = "data_science_job_posts_2025.csv"
+try:
+    df = pd.read_csv(FILE_PATH)
+except FileNotFoundError:
+    print(f"Lỗi: Không tìm thấy file tại đường dẫn '{FILE_PATH}'. Vui lòng kiểm tra lại.")
+    exit()
+
+def clean_salary(s):
+    """Hàm làm sạch cột lương (Target Variable)"""
+    if pd.isna(s): return None
+    s = str(s).replace(",", "").lower().replace('€', '').replace('$', '')
+    numbers = re.findall(r"[\d\.]+", s)
+    numbers = [float(n) for n in numbers if n]
+    if len(numbers) >= 2: return np.mean(numbers)
+    if len(numbers) == 1: return numbers[0]
+    return None
+
+df["salary_clean"] = df["salary"].apply(clean_salary)
+df = df.dropna(subset=["salary_clean"])
+df = df[df["salary_clean"] > 0].copy()
+
+# --- 2. Tách kỹ năng và Trích xuất Features ---
+skill_set = ["python", "sql", "r", "spark", "aws", "machine learning", "tensorflow", "pytorch", "excel"]
+for skill in skill_set:
+    df[f"skill_{skill.replace(' ', '_')}"] = df["skills"].str.contains(skill, case=False, na=False).astype(int)
+
+# --- 3. CHUẨN BỊ DỮ LIỆU TRAIN VÀ TEST (HỒI QUY) ---
+target_job_col = "job_title" 
+features = ["seniority_level", target_job_col] + \
+             [f"skill_{s.replace(' ', '_')}" for s in skill_set]
+
+X = df[features]
+y = df["salary_clean"] # Mục tiêu là giá trị lương liên tục (Năm)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# --- 4. Xây dựng Pipeline & Huấn luyện Model ---
+categorical_features = ["seniority_level", target_job_col] 
+numeric_features = [f"skill_{s.replace(' ', '_')}" for s in skill_set] 
+
+preprocess = ColumnTransformer([
+    ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features),
+    ('num', 'passthrough', numeric_features)
+], remainder="drop")
+
+pipeline = Pipeline([
+    ("preprocess", preprocess),
+    ("regressor", RandomForestRegressor(random_state=42, n_jobs=-1, n_estimators=100, max_depth=20))
+])
+
+print("Đang huấn luyện mô hình Hồi quy (Random Forest Regressor)...")
+pipeline.fit(X_train, y_train) 
+best_model = pipeline
+
+# --- 5. Đánh giá và Lưu Model Hồi quy ---
+MODEL_FILE_REG = "model_RF_regressor.pkl"
+joblib.dump(best_model, MODEL_FILE_REG) 
+print(f"\n✅ Đã lưu model HỒI QUY vào file '{MODEL_FILE_REG}'.")

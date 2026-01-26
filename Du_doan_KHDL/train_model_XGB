@@ -1,0 +1,173 @@
+import pandas as pd
+import numpy as np
+import joblib 
+import re
+# Import thư viện XGBoost
+from xgboost import XGBClassifier 
+from sklearn.model_selection import train_test_split, GridSearchCV, KFold
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+
+# Định nghĩa đường dẫn file
+# Vui lòng kiểm tra lại BASE_PATH và FILE_PATH khi chạy trên máy cục bộ
+BASE_PATH = r"D:\đồ án\Du_doan_KHDL\\"
+FILE_PATH = BASE_PATH + "data_science_job_posts_2025.csv"
+MODEL_FILE = BASE_PATH + "model_XGB.pkl" # Đã đổi tên file model cho phù hợp
+
+# --- 1. Load dữ liệu và Tạo Biến Mục tiêu ---
+print("--- 1. Tải và Làm sạch Dữ liệu (Full Features) ---")
+try:
+    df = pd.read_csv(FILE_PATH)
+except FileNotFoundError:
+    # Sử dụng file mặc định nếu không tìm thấy BASE_PATH của bạn
+    print("Sử dụng file mặc định.")
+    FILE_PATH = "data_science_job_posts_2025.csv" 
+    # Thử lại việc đọc file mặc định (giả định file này tồn tại trong cùng thư mục)
+    try:
+        df = pd.read_csv(FILE_PATH)
+    except:
+        print("Không tìm thấy file dữ liệu.")
+        exit() # Thoát nếu không thể đọc file
+
+# Tạo Biến Mục tiêu (Target Variable)
+df['Target'] = df['seniority_level'].apply(lambda x: 1 if str(x).lower() == 'senior' else 0)
+df = df.dropna(subset=['seniority_level']).copy()
+
+# --- 2. Feature Engineering: Xử lý các cột mới ---
+
+# 2A. Xử lý headquarter_country
+def extract_country(hq):
+    if pd.isna(hq):
+        return 'Unknown'
+    parts = hq.split(', ')
+    country = parts[-1].strip()
+    return country if country in ['US', 'USA', 'UK', 'CA', 'DE', 'FR', 'IN'] else 'Other' 
+
+df["headquarter_country"] = df["headquarter"].apply(extract_country).replace('US', 'USA')
+
+# 2B. Xử lý revenue_log
+def clean_revenue(rev):
+    if pd.isna(rev):
+        return None
+    s = str(rev).upper().replace('€', '').replace('$', '').strip()
+    
+    multiplier = 1.0
+    if 'T' in s:
+        multiplier = 1e12
+        s = s.replace('T', '')
+    elif 'B' in s:
+        multiplier = 1e9
+        s = s.replace('B', '')
+    elif 'M' in s:
+        multiplier = 1e6
+        s = s.replace('M', '')
+        
+    try:
+        return float(s.replace(',', '')) * multiplier
+    except ValueError:
+        return None
+
+df["revenue_clean"] = df["revenue"].apply(clean_revenue)
+df_temp = df.dropna(subset=["revenue_clean"])
+revenue_median = df_temp["revenue_clean"].median()
+df['revenue_log'] = np.log1p(df["revenue_clean"].fillna(revenue_median))
+df = df.drop(columns=['revenue_clean'])
+
+# 2C. Tách kỹ năng và Trích xuất Features (Skills)
+skill_set = ["python", "sql", "r", "spark", "aws", "machine learning", "tensorflow", "pytorch", "excel"]
+for skill in skill_set:
+    df[f"skill_{skill.replace(' ', '_')}"] = df["skills"].str.contains(skill, case=False, na=False).astype(int)
+
+# --- 3. CHUẨN BỊ DỮ LIỆU TRAIN VÀ TEST ---
+target_job_col = "job_title" 
+
+features = [target_job_col, "headquarter_country", "revenue_log"] + \
+             [f"skill_{s.replace(' ', '_')}" for s in skill_set]
+
+X = df[features]
+y = df['Target']
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print(f"Kích thước tập Train: {len(X_train)} mẫu")
+print(f"Kích thước tập Test: {len(X_test)} mẫu")
+print("-" * 50)
+
+# -----------------------------------------------------
+# --- 4. Xây dựng Pipeline & Tinh chỉnh Model (GridSearchCV) ---
+print("--- 2. Huấn luyện Mô hình và Tinh chỉnh Tham số (XGBClassifier) ---")
+print("Lưới tham số: 81 fits (3*3*3*3cv). Đã loại bỏ cảnh báo 'use_label_encoder'.")
+
+# Định nghĩa các Features
+categorical_features = [target_job_col, "headquarter_country"] 
+numeric_features = ["revenue_log"]
+skill_features = [f"skill_{s.replace(' ', '_')}" for s in skill_set] 
+
+# Preprocess: Xử lý các cột Category và các cột số
+preprocess = ColumnTransformer([
+    ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_features),
+    ('num', StandardScaler(), numeric_features), 
+    ('skills_passthrough', 'passthrough', skill_features) 
+], remainder="drop")
+
+# Pipeline cho XGBoost Classifier
+pipeline = Pipeline([
+    ("preprocess", preprocess),
+    # ĐÃ LOẠI BỎ use_label_encoder=False để FIX CẢNH BÁO
+    ("classifier", XGBClassifier(
+        random_state=42, 
+        eval_metric='logloss' # Vẫn giữ lại để chỉ định metric
+    )) 
+])
+
+# Lưới tham số (3 n_estimators * 3 max_depth * 3 learning_rate * 3 cv = 81 fits)
+param_grid = {
+    'classifier__n_estimators': [100, 300, 500],        
+    'classifier__max_depth': [3, 6, 9],                 
+    'classifier__learning_rate': [0.01, 0.1, 0.3],      
+}
+
+grid_search = GridSearchCV(
+    estimator=pipeline, 
+    param_grid=param_grid, 
+    scoring='accuracy', 
+    cv=3, 
+    verbose=2, 
+    n_jobs=-1
+)
+
+# Chạy huấn luyện 
+grid_search.fit(X_train, y_train) 
+best_model = grid_search.best_estimator_
+
+print(f"\n⚡ Tham số TỐT NHẤT tìm được: {grid_search.best_params_}")
+
+# --- 5. ĐÁNH GIÁ VÀ IN KẾT QUẢ PHÂN LOẠI ---
+print("\n--- 3. Đánh giá Hiệu suất và In kết quả ---")
+
+y_pred = best_model.predict(X_test)
+y_proba = best_model.predict_proba(X_test)[:, 1] 
+
+# Tính toán các chỉ số
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred, zero_division=0)
+recall = recall_score(y_test, y_pred, zero_division=0)
+f1 = f1_score(y_test, y_pred, zero_division=0)
+roc_auc = roc_auc_score(y_test, y_proba)
+
+# In kết quả theo format mẫu yêu cầu
+print("--- KẾT QUẢ LOGISTIC REGRESSION (FULL Features) ---")
+print("Kết quả XGBoost Classifier (Full Features):")
+print(f"Accuracy : {accuracy:.3f}") 
+print(f"Precision: {precision:.3f}") 
+print(f"Recall   : {recall:.4f}")
+print(f"F1-Score : {f1:.4f}")
+print(f"ROC AUC  : {roc_auc:.4f}")
+
+# --- 6. LƯU MÔ HÌNH VÀO FILE ---
+joblib.dump(best_model, MODEL_FILE)
+print(f"\n💾 Đã lưu Mô hình tốt nhất vào file: {MODEL_FILE}")
